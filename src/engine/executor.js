@@ -30,11 +30,28 @@ class Executor {
       const cmd = 'opencode';
       const args = ['run', this.promptContent];
 
-      logger.info(`Starting task ${this.task.id} with OpenCode engine in ${this.task.target_dir}`);
+      // Resolve target_dir: validate it exists, otherwise fall back to project root.
+      // The LLM may generate Linux-style paths (e.g. /agents/test) which don't exist on Windows.
+      const projectRoot = path.resolve(__dirname, '..', '..');
+      let workingDir = this.task.target_dir;
+
+      // If target_dir is not absolute, resolve it relative to project root
+      if (!path.isAbsolute(workingDir)) {
+        workingDir = path.resolve(projectRoot, workingDir);
+      }
+
+      // If the resolved directory doesn't exist, fall back to project root
+      if (!fs.existsSync(workingDir)) {
+        logger.warn(`Target dir "${workingDir}" does not exist. Falling back to project root: ${projectRoot}`);
+        taskModel.addLog(this.task.id, `SYSTEM: target_dir "${this.task.target_dir}" not found, using project root`, 'system');
+        workingDir = projectRoot;
+      }
+
+      logger.info(`Starting task ${this.task.id} with OpenCode engine in ${workingDir}`);
       taskModel.addLog(this.task.id, 'SYSTEM: Starting with OpenCode engine...', 'system');
       
       this.process = spawn(cmd, args, { 
-        cwd: this.task.target_dir,
+        cwd: workingDir,
         shell: true 
       });
 
