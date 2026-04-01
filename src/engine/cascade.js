@@ -1,15 +1,12 @@
 /**
- * cascade.js — Unified fallback engine for LimeClaw.
+ * cascade.js — Engine runner for LimeClaw.
  *
- * Priority order:
- *   1. Gemini CLI   (Google AI Pro)    — PM agent / primary CLI
- *   2. OpenCode CLI                     — local AI coding agent
+ * Uses OpenCode CLI as the sole coding engine.
  *
  * Both the chat proxy (bot.js) and the task queue (queue.js) use this module.
  */
 
 const { exec } = require('child_process');
-const config = require('../utils/config');
 const logger = require('../utils/logger');
 
 // ─────────────────────────────────────────────
@@ -36,43 +33,8 @@ function isAuthError(text) {
 }
 
 // ─────────────────────────────────────────────
-// Individual Engine Runners
+// Engine Runner
 // ─────────────────────────────────────────────
-
-/**
- * Try Gemini CLI (Google AI Pro).
- * @returns {{ output: string, status: 'ok'|'rate_limited'|'not_found'|'auth_error'|'failed' }}
- */
-function runGemini(prompt, cwd) {
-    return new Promise((resolve) => {
-        const safePrompt = prompt.replace(/"/g, '\\"');
-        // Try PATH first, then absolute node invocation
-        const cliPath = config.GEMINI_CLI_PATH ||
-            'C:\\Users\\rakes\\AppData\\Roaming\\npm\\node_modules\\@google\\gemini-cli\\dist\\index.js';
-
-        function attempt(cmd) {
-            exec(cmd, { timeout: 120000, cwd, shell: true }, (err, stdout, stderr) => {
-                const output = `${stdout}${stderr}`.replace(/\x1B\[[0-9;]*m/g, '').trim();
-                const combined = `${output} ${err?.message ?? ''}`;
-
-                if (isNotFound(combined)) {
-                    // If PATH failed, try node direct
-                    if (cmd.startsWith('gemini')) {
-                        return attempt(`node --no-warnings=DEP0040 "${cliPath}" -p "${safePrompt}" --yolo`);
-                    }
-                    return resolve({ output, status: 'not_found' });
-                }
-                if (isAuthError(combined)) return resolve({ output, status: 'auth_error' });
-                if (isRateLimit(combined)) return resolve({ output, status: 'rate_limited' });
-                if (err && !stdout) return resolve({ output, status: 'failed' });
-
-                return resolve({ output: output || 'No output.', status: 'ok' });
-            });
-        }
-
-        attempt(`gemini -p "${safePrompt}" --yolo`);
-    });
-}
 
 /**
  * Try OpenCode CLI (local AI coding agent).
@@ -107,11 +69,10 @@ function runOpenCode(prompt, cwd) {
 }
 
 // ─────────────────────────────────────────────
-// Engine Definitions (ordered cascade)
+// Engine Definitions
 // ─────────────────────────────────────────────
 
 const ENGINES = [
-    { id: 'gemini', label: '💎 Gemini CLI (PM Agent)', run: runGemini, isAsync: false },
     { id: 'opencode', label: '🔧 OpenCode CLI', run: runOpenCode, isAsync: false },
 ];
 
@@ -122,14 +83,14 @@ const BUILD_ENGINES = ENGINES;
 // ─────────────────────────────────────────────
 
 /**
- * Try all engines in order until one succeeds.
+ * Run the engine cascade (single engine: OpenCode).
  *
  * @param {string} prompt - The prompt to send.
  * @param {{
  *   cwd?: string,
- *   startFrom?: string,           // engine id to start from (e.g. 'mimo' to skip Gemini)
+ *   startFrom?: string,
  *   onEngineSwitch?: (from: string, to: string, reason: string) => void,
- *   engines?: typeof ENGINES      // Override the default cascade
+ *   engines?: typeof ENGINES
  * }} [opts]
  *
  * @returns {{ output: string, engine: string, status: string }}
@@ -161,12 +122,6 @@ async function runCascade(prompt, opts = {}) {
         const reason = result.status;
         logger.warn(`Cascade: ${engine.label} → ${reason}`);
 
-        // Notify caller about the switch (used by bot.js to edit the status message)
-        if (i + 1 < engines.length && onEngineSwitch) {
-            const next = engines[i + 1];
-            onEngineSwitch(engine.id, next.id, reason);
-        }
-
         // Don't cascade on auth errors — user needs to fix credentials
         if (reason === 'auth_error') {
             return {
@@ -179,7 +134,7 @@ async function runCascade(prompt, opts = {}) {
     }
 
     return {
-        output: '❌ All engines exhausted. Gemini CLI and OpenCode are both unavailable right now.',
+        output: '❌ OpenCode engine is unavailable right now. Check that opencode is installed and authenticated.',
         engine: 'none',
         label: '—',
         status: 'all_failed'
@@ -187,6 +142,5 @@ async function runCascade(prompt, opts = {}) {
 }
 
 module.exports = {
-    runCascade, runGemini, runOpenCode, ENGINES, BUILD_ENGINES,
-    isRateLimit, isNotFound
+    runCascade, runOpenCode, ENGINES, BUILD_ENGINES
 };

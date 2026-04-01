@@ -12,7 +12,7 @@ function initSchema() {
                 description TEXT NOT NULL,
                 target_dir TEXT NOT NULL,
                 status TEXT DEFAULT 'queued',
-                current_engine TEXT DEFAULT 'gemini',
+                current_engine TEXT DEFAULT 'opencode',
                 phases_json TEXT DEFAULT '[]',
                 priority INTEGER DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -41,8 +41,10 @@ function initSchema() {
         try { db.exec("ALTER TABLE tasks ADD COLUMN priority INTEGER DEFAULT 0;"); } catch(e){}
         // Index for fast per-chat memory lookup
         try { db.exec("CREATE INDEX IF NOT EXISTS idx_memory_chat ON conversation_memory(chat_id, id);"); } catch(e){}
-        // Migrate old antigravity tasks to gemini
-        try { db.exec("UPDATE tasks SET current_engine = 'gemini' WHERE current_engine = 'antigravity'"); } catch(e){}
+        // Migrate old engine values to opencode
+        try { db.exec("UPDATE tasks SET current_engine = 'opencode' WHERE current_engine = 'antigravity'"); } catch(e){}
+        try { db.exec("UPDATE tasks SET current_engine = 'opencode' WHERE current_engine = 'gemini'"); } catch(e){}
+        try { db.exec("UPDATE tasks SET current_engine = 'opencode' WHERE current_engine = 'mimo'"); } catch(e){}
     } catch (err) {
         logger.error(`Schema error: ${err.message}`);
     }

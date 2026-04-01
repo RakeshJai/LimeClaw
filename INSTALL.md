@@ -68,13 +68,25 @@ npm install
 | dotenv | ^17.3.1 | Environment variables |
 | winston | ^3.19.0 | Logging |
 
-## 6. Install Playwright Chromium
+## 6. Install OpenCode CLI (Required)
+
+OpenCode is the sole coding engine for LimeClaw.
+
+```bash
+# Option A: Global install (recommended)
+npm install -g opencode
+
+# Option B: Use via npx (no global install needed)
+# The bot will call `npx opencode` automatically if global install is not found
+```
+
+## 7. Install Playwright Chromium
 
 ```bash
 npx playwright install chromium
 ```
 
-## 7. Configure Environment
+## 8. Configure Environment
 
 ```bash
 # Copy example env file
@@ -89,10 +101,9 @@ Fill in your keys:
 BOT_TOKEN=your_telegram_bot_token_here
 AUTH_CHAT_ID=your_telegram_chat_id_here
 GROQ_API_KEY=your_groq_api_key_here
-GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
-## 8. Run the Bot
+## 9. Run the Bot
 
 ```bash
 # Start directly

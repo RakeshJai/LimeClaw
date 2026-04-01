@@ -4,7 +4,7 @@ const config = require('../utils/config');
 
 /**
  * Builds the comprehensive prompt for to the CLI Agent.
- * Re-reads existing project CLAUDE.md/GEMINI.md context if applicable,
+ * Re-reads existing project CLAUDE.md context if applicable,
  * along with the actual task.
  */
 function buildPrompt(task) {

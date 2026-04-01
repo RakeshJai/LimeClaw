@@ -31,7 +31,7 @@ After reading all memory bank files, greet the user with:
 
 - **Repo**: https://github.com/RakeshJai/LimeClaw
 - **Branch**: `main`
-- **Stack**: Node.js + Telegraf + Groq + Gemini + SQLite
+- **Stack**: Node.js + Telegraf + Groq + OpenCode + SQLite
 - **Agents**: 11 specialized sub-agents in `.opencode/agents/`
 - **Memory Bank**: `.opencode/memory-bank/` (6 files)
 

@@ -35,7 +35,7 @@ async function parseUserIntent(text, activeTaskContext, history = []) {
     9. {"action": "pause"} - If they want to stop or pause.
     10. {"action": "resume", "taskId": <number>} - If they want to resume.
     11. {"action": "reply", "message": "<your answer>"} - For basic chat, general questions, or if you need more context. You MUST use prior conversation context when answering these.
-    12. {"action": "prompt_coders", "prompt": "<the prompt>"} - If the user is specifically asking the coding agents (Gemini CLI/MiMo V2 Pro Free) to write code, explain code, or perform a complex analysis.
+    12. {"action": "prompt_coders", "prompt": "<the prompt>"} - If the user is specifically asking the coding agent (OpenCode CLI) to write code, explain code, or perform a complex analysis.
 
     Current context: ${activeTaskContext ? `An active task is running (ID: ${activeTaskContext.id} in ${activeTaskContext.target_dir})` : 'No tasks currently running.'}
     

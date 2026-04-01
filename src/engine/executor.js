@@ -12,7 +12,7 @@ class Executor {
     this.isPaused = false;
   }
 
-  // Detect rate limit errors from Gemini CLI output
+  // Detect rate limit errors from engine output
   isRateLimitError(output) {
     const outputLower = output.toLowerCase();
     const rateLimitSignatures = [
@@ -27,33 +27,11 @@ class Executor {
 
   async run() {
     return new Promise((resolve, reject) => {
-      const { runMiMo } = require('./cascade');
-      
-      let cmd, args;
-      if (this.task.current_engine === 'gemini') {
-        cmd = 'gemini';
-        args = ['--yolo', '-p', this.promptContent];
-      } else if (this.task.current_engine === 'mimo') {
-        logger.info(`Task ${this.task.id} executing via MiMo V2 Pro Free API...`);
-        runMiMo(this.promptContent).then(result => {
-           if (result.status === 'ok') {
-               taskModel.addLog(this.task.id, result.output, 'stdout');
-               taskModel.addLog(this.task.id, 'SYSTEM: Task completed via MiMo V2 Pro Free API', 'system');
-               resolve({ status: 'completed', output: result.output });
-           } else {
-               taskModel.addLog(this.task.id, `MiMo Error: ${result.output}`, 'stderr');
-               resolve({ status: 'failed', error: result.output });
-           }
-        }).catch(err => {
-           resolve({ status: 'failed', error: err.message });
-        });
-        return; // API call handled, don't proceed to spawn
-      } else {
-        return reject(new Error(`Unknown engine: ${this.task.current_engine}. Valid engines: 'gemini', 'mimo'`));
-      }
+      const cmd = 'opencode';
+      const args = ['run', this.promptContent];
 
-      logger.info(`Starting task ${this.task.id} with ${this.task.current_engine} engine in ${this.task.target_dir}`);
-      taskModel.addLog(this.task.id, `SYSTEM: Starting with ${this.task.current_engine} engine...`, 'system');
+      logger.info(`Starting task ${this.task.id} with OpenCode engine in ${this.task.target_dir}`);
+      taskModel.addLog(this.task.id, 'SYSTEM: Starting with OpenCode engine...', 'system');
       
       this.process = spawn(cmd, args, { 
         cwd: this.task.target_dir,
@@ -70,7 +48,7 @@ class Executor {
         
         if (this.isRateLimitError(text)) {
           rateLimitHit = true;
-          logger.warn(`Rate limit detected in task ${this.task.id} on engine ${this.task.current_engine}`);
+          logger.warn(`Rate limit detected in task ${this.task.id} on OpenCode engine`);
         }
       });
 
@@ -81,7 +59,7 @@ class Executor {
 
         if (this.isRateLimitError(text)) {
           rateLimitHit = true;
-          logger.warn(`Rate limit detected in task ${this.task.id} (stderr) on engine ${this.task.current_engine}`);
+          logger.warn(`Rate limit detected in task ${this.task.id} (stderr) on OpenCode engine`);
         }
       });
 
@@ -93,7 +71,7 @@ class Executor {
         }
 
         if (rateLimitHit) {
-          taskModel.addLog(this.task.id, `SYSTEM: Rate limit exceeded by ${this.task.current_engine}`, 'system');
+          taskModel.addLog(this.task.id, 'SYSTEM: Rate limit exceeded by OpenCode engine', 'system');
           return resolve({ status: 'rate_limited' });
         }
 

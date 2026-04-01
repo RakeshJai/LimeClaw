@@ -1,9 +1,9 @@
-const config = require('../utils/config');
+const { exec } = require('child_process');
 const logger = require('../utils/logger');
 
 // Devpost is JS-rendered — plain fetch returns a shell with no project data.
 // Strategy: hit their JSON search endpoint (undocumented but stable),
-// then fall back to MiMo-synthesized ideas if that also fails.
+// then fall back to OpenCode-synthesized ideas if that also fails.
 async function getDevpostWinners(count = 5) {
     logger.info(`Fetching ${count} Devpost winners...`);
 
@@ -74,43 +74,34 @@ async function getDevpostWinners(count = 5) {
             logger.info(`Devpost HTML scrape returned ${projects.length} results.`);
             return projects;
         }
-        logger.warn('Devpost HTML scrape found no matches. Devpost is likely JS-gated. Falling back to MiMo synthesis.');
+        logger.warn('Devpost HTML scrape found no matches. Devpost is likely JS-gated. Falling back to OpenCode synthesis.');
     } catch (err) {
-        logger.warn(`Devpost HTML scrape failed: ${err.message}. Falling back to MiMo synthesis.`);
+        logger.warn(`Devpost HTML scrape failed: ${err.message}. Falling back to OpenCode synthesis.`);
     }
 
-    // Attempt 3: MiMo-synthesized real hackathon winner concepts
-    if (config.MIMO_API_KEY) {
-        logger.info(`Generating ${count} hackathon-winner-style ideas via MiMo...`);
-        try {
-            const response = await fetch(`${config.MIMO_BASE_URL}/chat/completions`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${config.MIMO_API_KEY}`,
-                },
-                body: JSON.stringify({
-                    model: config.MIMO_MODEL_ID,
-                    messages: [{
-                        role: 'user',
-                        content: `List ${count} real-world Devpost hackathon winning project concepts from recent (2023-2024) hackathons. 
-For each, give: a realistic project name, a one-sentence tagline, and a Devpost-style URL slug.
-Format STRICTLY as a JSON array: [{"title": "...", "description": "...", "url": "https://devpost.com/software/slug"}]
-No markdown, no explanation, just the JSON array.`
-                    }],
-                    temperature: 0.6,
-                    max_tokens: 1024,
-                }),
+    // Attempt 3: OpenCode CLI synthesized real hackathon winner concepts
+    logger.info(`Generating ${count} hackathon-winner-style ideas via OpenCode...`);
+    try {
+        const prompt = `List ${count} real-world Devpost hackathon winning project concepts from recent (2023-2024) hackathons. ` +
+            `For each, give: a realistic project name, a one-sentence tagline, and a Devpost-style URL slug. ` +
+            `Format STRICTLY as a JSON array: [{"title": "...", "description": "...", "url": "https://devpost.com/software/slug"}] ` +
+            `No markdown, no explanation, just the JSON array.`;
+        const safePrompt = prompt.replace(/"/g, '\\"');
+
+        const result = await new Promise((resolve, reject) => {
+            exec(`opencode run "${safePrompt}"`, { timeout: 120000, shell: true }, (err, stdout, stderr) => {
+                const output = `${stdout}${stderr}`.replace(/\x1B\[[0-9;]*m/g, '').trim();
+                if (err && !stdout) return reject(err);
+                resolve(output);
             });
-            const data = await response.json();
-            const raw = data.choices?.[0]?.message?.content?.trim()
-                .replace(/^```json/, '').replace(/^```/, '').replace(/```$/, '').trim();
-            const ideas = JSON.parse(raw);
-            logger.info(`MiMo synthesized ${ideas.length} Devpost-style concepts.`);
-            return ideas.slice(0, count);
-        } catch (gErr) {
-            logger.error(`MiMo synthesis also failed: ${gErr.message}`);
-        }
+        });
+
+        const raw = result.replace(/^```json/, '').replace(/^```/, '').replace(/```$/, '').trim();
+        const ideas = JSON.parse(raw);
+        logger.info(`OpenCode synthesized ${ideas.length} Devpost-style concepts.`);
+        return ideas.slice(0, count);
+    } catch (gErr) {
+        logger.error(`OpenCode synthesis also failed: ${gErr.message}`);
     }
 
     return [];

@@ -11,7 +11,7 @@ function setupBot(bot) {
     bot.use(authMiddleware());
 
     bot.command('start', (ctx) => {
-        ctx.reply('🚀 *LimeClaw Initialized.*\nConnected to Gemini CLI & OpenCode. Type /help to see all commands.', { parse_mode: 'Markdown' });
+        ctx.reply('🚀 *LimeClaw Initialized.*\nConnected to OpenCode CLI. Type /help to see all commands.', { parse_mode: 'Markdown' });
     });
 
     bot.command('help', (ctx) => {
@@ -26,7 +26,7 @@ function setupBot(bot) {
 /clear — Wipe chat history \& conversation memory
 
 🏗️ *Build Tasks*
-/gemini \<prompt\> — Send a prompt directly to Gemini CLI
+/opencode \<prompt\> — Send a prompt directly to OpenCode CLI
 
 \`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\`
 💬 *Natural Language Commands*
@@ -44,7 +44,7 @@ _Just type these as plain messages:_
 ▶️ *Resume* — \"Resume task 4\"
 
 \`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\`
-💡 _Any other message is sent to Gemini CLI → MiMo V2 Pro Free cascade._`;
+💡 _Any other message is sent to OpenCode CLI._`;
 
         return ctx.reply(msg, { parse_mode: 'Markdown' });
     });
@@ -102,22 +102,18 @@ _Just type these as plain messages:_
     const { runCascade, BUILD_ENGINES } = require('../engine/cascade');
 
     async function handleAutoFallbackPrompt(ctx, prompt) {
-        const statusMsg = await ctx.reply(`🤖 Prompting Gemini CLI...`);
+        const statusMsg = await ctx.reply(`🤖 Prompting OpenCode CLI...`);
         const chatId = ctx.chat.id;
         const msgId = statusMsg.message_id;
 
         try {
             const result = await runCascade(prompt, {
                 engines: BUILD_ENGINES,
-                onEngineSwitch: async (from, to, reason) => {
-                    const toLabel = to === 'mimo' ? 'MiMo V2 Pro Free' : to;
-                    await ctx.telegram.editMessageText(chatId, msgId, undefined, `⚠️ Gemini ${reason}. Falling back to MiMo V2 Pro Free...`);
-                }
             });
 
             if (result.status === 'all_failed') {
                 const report = await getFullQuotaReport();
-                return ctx.telegram.editMessageText(chatId, msgId, undefined, `❌ *Tokens Depleted*\n\n${report}`, { parse_mode: 'Markdown' });
+                return ctx.telegram.editMessageText(chatId, msgId, undefined, `❌ *Engine Unavailable*\n\n${report}`, { parse_mode: 'Markdown' });
             }
 
             if (result.status !== 'ok') {
@@ -127,8 +123,7 @@ _Just type these as plain messages:_
             let response = result.output;
             if (response.length > 4000) response = response.substring(0, 4000) + '...\n[Truncated]';
             
-            const header = result.engine === 'gemini' ? '💎 Gemini CLI Output' : 
-                          result.engine === 'mimo' ? '🧠 MiMo V2 Pro Free' : '⚡ Fallback Output';
+            const header = '🔧 OpenCode CLI Output';
 
             return ctx.telegram.editMessageText(chatId, msgId, undefined, `[${header}]\n${response}`);
         } catch (err) {
@@ -136,16 +131,15 @@ _Just type these as plain messages:_
         }
     }
 
-    bot.command('gemini', (ctx) => {
-        const prompt = ctx.message.text.substring('/gemini'.length).trim();
-        if (!prompt) return ctx.reply('Send a prompt: /gemini <message>');
-        const { runCascade } = require('../engine/cascade');
-        handleAutoFallbackPrompt(ctx, `[Gemini CLI Direct] ${prompt}`);
+    bot.command('opencode', (ctx) => {
+        const prompt = ctx.message.text.substring('/opencode'.length).trim();
+        if (!prompt) return ctx.reply('Send a prompt: /opencode <message>');
+        handleAutoFallbackPrompt(ctx, prompt);
     });
 
     bot.on('text', async (ctx) => {
         const text = (ctx.message.text || '').toLowerCase();
-        if (text.startsWith('/start') || text.startsWith('/help') || text.startsWith('/quota') || text.startsWith('/clear') || text.startsWith('/gemini')) return;
+        if (text.startsWith('/start') || text.startsWith('/help') || text.startsWith('/quota') || text.startsWith('/clear') || text.startsWith('/opencode')) return;
 
         ctx.telegram.sendChatAction(ctx.chat.id, 'typing');
         

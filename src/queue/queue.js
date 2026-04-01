@@ -4,7 +4,6 @@ const logger = require('../utils/logger');
 const Executor = require('../engine/executor');
 const { buildPrompt } = require('../engine/prompt');
 const telegrafConfig = require('../utils/config');
-const { checkGeminiQuota, checkMiMoQuota } = require('../utils/quota');
 
 let isWorkerRunning = false;
 let activeExecutor = null;
@@ -82,19 +81,9 @@ async function processNextTask() {
                 }
             }
         } else if (result.status === 'rate_limited') {
-            // Cascade logic: gemini -> mimo -> rate_limited
-            if (task.current_engine === 'gemini') {
-                logger.warn(`Task ${task.id} hit rate limit on Gemini. Cascading to MiMo V2 Pro Free.`);
-                taskModel.updateEngine(task.id, 'mimo');
-                taskModel.updateStatus(task.id, 'queued'); // Re-queue
-                notifyTelegram(`⚠️ Task ${task.id} rate-limited on Gemini. Cascading to 🧠 MiMo V2 Pro Free.`);
-            } else if (task.current_engine === 'mimo') {
-                logger.warn(`Task ${task.id} hit rate limit on MiMo. All build engines exhausted.`);
-                taskModel.updateStatus(task.id, 'rate_limited');
-                notifyTelegram(`❌ Task ${task.id} paused. All build engines (Gemini, MiMo) are rate-limited.`);
-            } else {
-                taskModel.updateStatus(task.id, 'rate_limited');
-            }
+            logger.warn(`Task ${task.id} hit rate limit on OpenCode engine.`);
+            taskModel.updateStatus(task.id, 'rate_limited');
+            notifyTelegram(`⚠️ Task ${task.id} paused — OpenCode is rate-limited. It will resume when quota is available.`);
         } else if (result.status === 'paused') {
             taskModel.updateStatus(task.id, 'paused');
             notifyTelegram(`⏸ Task ${task.id} has been paused.`);
@@ -126,7 +115,7 @@ function startPolling() {
 }
 
 /**
- * Periodically checks if engines are back online to resume rate-limited tasks.
+ * Periodically checks if OpenCode is back online to resume rate-limited tasks.
  */
 async function startQuotaReviver() {
     logger.info('Starting quota reviver loop (every 2m)...');
@@ -135,24 +124,15 @@ async function startQuotaReviver() {
             const rateLimitedTasks = taskModel.getRateLimitedTasks();
             if (rateLimitedTasks.length === 0) return;
 
-            logger.info(`Checking quotas to resume ${rateLimitedTasks.length} rate-limited tasks...`);
-            const [gemini, mimo] = await Promise.all([
-                checkGeminiQuota(),
-                checkMiMoQuota()
-            ]);
+            logger.info(`Checking OpenCode availability to resume ${rateLimitedTasks.length} rate-limited tasks...`);
+            const { checkOpenCodeAvailability } = require('../utils/quota');
+            const openCode = await checkOpenCodeAvailability();
 
-            if (gemini.online) {
+            if (openCode.online) {
                 for (const task of rateLimitedTasks) {
-                    taskModel.updateEngine(task.id, 'gemini');
                     taskModel.updateStatus(task.id, 'queued');
                 }
-                notifyTelegram(`♻️ Gemini is online! Resuming ${rateLimitedTasks.length} rate-limited tasks.`);
-            } else if (mimo.online) {
-                for (const task of rateLimitedTasks) {
-                    taskModel.updateEngine(task.id, 'mimo');
-                    taskModel.updateStatus(task.id, 'queued');
-                }
-                notifyTelegram(`♻️ MiMo V2 Pro Free is online! Resuming ${rateLimitedTasks.length} rate-limited tasks.`);
+                notifyTelegram(`♻️ OpenCode is back online! Resuming ${rateLimitedTasks.length} rate-limited tasks.`);
             }
         } catch (err) {
             logger.error(`Quota reviver error: ${err.message}`);

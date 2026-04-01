@@ -1,3 +1,4 @@
+const { exec } = require('child_process');
 const cron = require('node-cron');
 const config = require('../utils/config');
 const logger = require('../utils/logger');
@@ -5,8 +6,6 @@ const logger = require('../utils/logger');
 const processedIds = new Set();
 
 async function analyzeContent(text, type) {
-    if (!config.MIMO_API_KEY) return null;
-
     let prompt;
     if (type === 'pain_point') {
         prompt = `Analyze this comment. Is the user expressing a genuine pain point, frustration with a software tool, or specifically wishing for a new tool/feature?
@@ -37,25 +36,18 @@ JSON format required if YES:
     }
 
     try {
-        const response = await fetch(`${config.MIMO_BASE_URL}/chat/completions`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${config.MIMO_API_KEY}`,
-            },
-            body: JSON.stringify({
-                model: config.MIMO_MODEL_ID,
-                messages: [{ role: "user", content: prompt }],
-                temperature: 0.1,
-                max_tokens: 256,
-            }),
+        const safePrompt = prompt.replace(/"/g, '\\"');
+        const result = await new Promise((resolve, reject) => {
+            exec(`opencode run "${safePrompt}"`, { timeout: 60000, shell: true }, (err, stdout, stderr) => {
+                const output = `${stdout}${stderr}`.replace(/\x1B\[[0-9;]*m/g, '').trim();
+                if (err && !stdout) return reject(err);
+                resolve(output);
+            });
         });
 
-        const data = await response.json();
-        const reply = data.choices?.[0]?.message?.content?.trim() || '';
-        if (reply === "IGNORE" || reply.includes("IGNORE")) return null;
+        if (result === "IGNORE" || result.includes("IGNORE")) return null;
 
-        const jsonStr = reply.replace(/^```json/, '').replace(/^```/, '').replace(/```$/, '').trim();
+        const jsonStr = result.replace(/^```json/, '').replace(/^```/, '').replace(/```$/, '').trim();
         return JSON.parse(jsonStr);
     } catch (err) {
         return null;

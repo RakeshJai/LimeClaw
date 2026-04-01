@@ -21,26 +21,14 @@ function getDailyUsage() {
         const db = require('../db/database');
         const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
-        // Count distinct task runs per engine today
-        const geminiRuns = db.prepare(`
+        // Count distinct OpenCode task runs today
+        const openCodeRuns = db.prepare(`
             SELECT COUNT(DISTINCT t.id) as cnt
             FROM tasks t
             JOIN logs l ON l.task_id = t.id
-            WHERE t.current_engine = 'gemini'
-              AND date(l.created_at) = ?
+            WHERE date(l.created_at) = ?
               AND l.log_type = 'system'
-              AND l.content LIKE '%Starting with gemini%'
-        `).get(today);
-
-        // Count distinct task runs per engine today
-        const mimoRuns = db.prepare(`
-            SELECT COUNT(DISTINCT t.id) as cnt
-            FROM tasks t
-            JOIN logs l ON l.task_id = t.id
-            WHERE t.current_engine = 'mimo'
-              AND date(l.created_at) = ?
-              AND l.log_type = 'system'
-              AND l.content LIKE '%Starting with mimo%'
+              AND l.content LIKE '%Starting with OpenCode%'
         `).get(today);
 
         // Count Groq conversation messages today
@@ -53,11 +41,10 @@ function getDailyUsage() {
 
         return {
             groq: groqMessages?.cnt ?? 0,
-            gemini: geminiRuns?.cnt ?? 0,
-            mimo: mimoRuns?.cnt ?? 0,
+            opencode: openCodeRuns?.cnt ?? 0,
         };
     } catch (e) {
-        return { groq: 0, gemini: 0, mimo: 0 };
+        return { groq: 0, opencode: 0 };
     }
 }
 
@@ -127,73 +114,24 @@ async function checkGroqQuota() {
 }
 
 /**
- * Check MiMo V2 Pro Free via OpenRouter API.
+ * Check OpenCode CLI availability — tries to run a simple prompt.
  */
-async function checkMiMoQuota() {
-    if (!config.MIMO_API_KEY) return { status: '❌ No API key configured', online: false };
-    
-    try {
-        const response = await fetch(`${config.MIMO_BASE_URL}/chat/completions`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${config.MIMO_API_KEY}`,
-            },
-            body: JSON.stringify({
-                model: config.MIMO_MODEL_ID,
-                messages: [{ role: 'user', content: 'say ok' }],
-                max_tokens: 1,
-            }),
-        });
-        
-        if (response.ok) return { status: '✅ Online', online: true };
-        
-        const data = await response.json();
-        const msg = (data.error?.message || '').toLowerCase();
-        if (msg.includes('429') || msg.includes('rate limit')) {
-            return { status: '⚠️ Rate Limited', online: false };
-        }
-        return { status: `❌ Error`, detail: data.error?.message?.substring(0, 80), online: false };
-    } catch (err) {
-        return { status: `❌ Error`, detail: err.message?.substring(0, 80), online: false };
-    }
-}
-
-/**
- * Check Gemini CLI — tries PATH first, falls back to node direct.
- */
-function checkGeminiQuota() {
+function checkOpenCodeAvailability() {
     return new Promise((resolve) => {
-        const cliPath = config.GEMINI_CLI_PATH ||
-            'C:\\Users\\rakes\\AppData\\Roaming\\npm\\node_modules\\@google\\gemini-cli\\dist\\index.js';
+        exec('opencode run "say ok"', { timeout: 20000, shell: true }, (err, stdout, stderr) => {
+            const c = `${stdout} ${stderr} ${err?.message ?? ''}`.toLowerCase();
 
-        const invocations = [
-            { cmd: 'gemini', args: '-p "say ok" --yolo' },
-            { cmd: 'node', args: `--no-warnings=DEP0040 "${cliPath}" -p "say ok" --yolo` },
-        ];
-
-        function attempt(idx) {
-            if (idx >= invocations.length) {
-                return resolve({ status: '❌ CLI not found', note: 'npm install -g @google/gemini-cli@latest', online: false });
+            if (c.includes('not recognized') || c.includes('command not found') || c.includes('enoent')) {
+                return resolve({ status: '❌ CLI not found', note: 'Install opencode: npm install -g opencode', online: false });
             }
-            const inv = invocations[idx];
-            exec(`${inv.cmd} ${inv.args}`, { timeout: 20000, shell: true }, (err, stdout, stderr) => {
-                const c = `${stdout} ${stderr} ${err?.message ?? ''}`.toLowerCase();
-
-                if (c.includes('not recognized') || c.includes('command not found') || c.includes('enoent') || c.includes('cannot find module')) {
-                    return attempt(idx + 1);
-                }
-                if (c.includes('rate limit') || c.includes('429') || c.includes('resource_exhausted') || c.includes('quota exceeded')) {
-                    return resolve({ status: '⚠️ Rate Limited', online: false });
-                }
-                if (c.includes('not logged in') || c.includes('unauthenticated') || c.includes('please run') || c.includes('sign in')) {
-                    return resolve({ status: '⚠️ Not Authenticated', note: 'Run `gemini` to sign in', online: false });
-                }
-                return resolve({ status: '✅ Online', online: true });
-            });
-        }
-
-        attempt(0);
+            if (c.includes('rate limit') || c.includes('429') || c.includes('quota exceeded')) {
+                return resolve({ status: '⚠️ Rate Limited', online: false });
+            }
+            if (c.includes('not logged in') || c.includes('unauthenticated') || c.includes('sign in')) {
+                return resolve({ status: '⚠️ Not Authenticated', note: 'Run opencode to sign in', online: false });
+            }
+            return resolve({ status: '✅ Online', online: true });
+        });
     });
 }
 
@@ -204,10 +142,9 @@ function checkGeminiQuota() {
 async function getFullQuotaReport() {
     logger.info('Running quota checks...');
 
-    const [groqResult, geminiResult, mimoResult, usage] = await Promise.all([
+    const [groqResult, openCodeResult, usage] = await Promise.all([
         checkGroqQuota(),
-        checkGeminiQuota(),
-        checkMiMoQuota(),
+        checkOpenCodeAvailability(),
         Promise.resolve(getDailyUsage()),
     ]);
 
@@ -220,8 +157,7 @@ async function getFullQuotaReport() {
 
     const LIMITS = {
         groq: 500,
-        gemini: 200,
-        mimo: 500,
+        opencode: 200,
     };
 
     function engineBlock(emoji, name, tier, result, used, limit) {
@@ -239,7 +175,6 @@ async function getFullQuotaReport() {
     }
 
     let report = `📊 *LIMECLAW ENGINE DASHBOARD*\n`;
-    report += `👤 *bavanandam@gmail.com* · Google AI Pro\n`;
     report += `🕐 ${now} CT · Resets in ${resetIn}\n`;
     report += `\`─────────────────────────────\`\n\n`;
 
@@ -249,18 +184,12 @@ async function getFullQuotaReport() {
     );
 
     report += engineBlock(
-        '💎', 'Gemini CLI (PM Agent)', 'Google AI Pro',
-        geminiResult, usage.gemini, LIMITS.gemini
-    );
-
-    report += engineBlock(
-        '🧠', 'MiMo V2 Pro Free (Implementation)', 'OpenRouter',
-        mimoResult, usage.mimo, LIMITS.mimo
+        '🔧', 'OpenCode CLI (Coding Engine)', 'Local AI Agent',
+        openCodeResult, usage.opencode, LIMITS.opencode
     );
 
     report += `\`─────────────────────────────\`\n`;
-    report += `📌 _Usage bars reflect tasks run through LimeClaw today._\n`;
-    report += `_Limits shown are conservative Pro tier estimates._`;
+    report += `📌 _Usage bars reflect tasks run through LimeClaw today._`;
 
     return report;
 }
@@ -268,6 +197,5 @@ async function getFullQuotaReport() {
 module.exports = {
     getFullQuotaReport,
     checkGroqQuota,
-    checkGeminiQuota,
-    checkMiMoQuota
+    checkOpenCodeAvailability
 };
