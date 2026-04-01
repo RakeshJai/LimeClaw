@@ -9,6 +9,9 @@ node_modules
 # OpenCode directory
 .opencode/
 
+# Database runtime files
+data/
+
 # OS files
 .DS_Store
 Thumbs.db
