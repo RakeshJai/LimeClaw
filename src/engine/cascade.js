@@ -3,7 +3,7 @@
  *
  * Priority order:
  *   1. Gemini CLI   (Google AI Pro)    — PM agent / primary CLI
- *   2. MiMo V2 Pro Free (OpenRouter)   — always-available API fallback
+ *   2. OpenCode CLI                     — local AI coding agent
  *
  * Both the chat proxy (bot.js) and the task queue (queue.js) use this module.
  */
@@ -75,43 +75,35 @@ function runGemini(prompt, cwd) {
 }
 
 /**
- * Try MiMo V2 Pro Free via OpenAI-compatible API (no CLI needed — always available if key is set).
- * @returns {{ output: string, status: 'ok'|'rate_limited'|'no_key'|'failed' }}
+ * Try OpenCode CLI (local AI coding agent).
+ * @returns {{ output: string, status: 'ok'|'rate_limited'|'not_found'|'auth_error'|'failed' }}
  */
-async function runMiMo(prompt) {
-    const apiKey = config.MIMO_API_KEY;
-    if (!apiKey) return { output: 'MiMo API key not configured.', status: 'no_key' };
+function runOpenCode(prompt, cwd) {
+    return new Promise((resolve) => {
+        const safePrompt = prompt.replace(/"/g, '\\"');
 
-    try {
-        const response = await fetch(`${config.MIMO_BASE_URL || 'https://openrouter.ai/api/v1'}/chat/completions`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify({
-                model: config.MIMO_MODEL_ID || 'opencode/mimo-v2-pro-free',
-                messages: [{ role: 'user', content: prompt }],
-                temperature: 0.3,
-                max_tokens: 4096,
-            }),
-        });
+        function attempt(cmd) {
+            exec(cmd, { timeout: 120000, cwd, shell: true }, (err, stdout, stderr) => {
+                const output = `${stdout}${stderr}`.replace(/\x1B\[[0-9;]*m/g, '').trim();
+                const combined = `${output} ${err?.message ?? ''}`;
 
-        const data = await response.json();
+                if (isNotFound(combined)) {
+                    // If PATH failed, try npx
+                    if (cmd.startsWith('opencode')) {
+                        return attempt(`npx opencode run "${safePrompt}"`);
+                    }
+                    return resolve({ output, status: 'not_found' });
+                }
+                if (isAuthError(combined)) return resolve({ output, status: 'auth_error' });
+                if (isRateLimit(combined)) return resolve({ output, status: 'rate_limited' });
+                if (err && !stdout) return resolve({ output, status: 'failed' });
 
-        if (!response.ok) {
-            const msg = data.error?.message || JSON.stringify(data);
-            if (isRateLimit(msg)) return { output: msg, status: 'rate_limited' };
-            return { output: msg, status: 'failed' };
+                return resolve({ output: output || 'No output.', status: 'ok' });
+            });
         }
 
-        const output = data.choices?.[0]?.message?.content?.trim() || 'No response.';
-        return { output, status: 'ok' };
-    } catch (err) {
-        const msg = err.message || '';
-        if (isRateLimit(msg)) return { output: msg, status: 'rate_limited' };
-        return { output: msg, status: 'failed' };
-    }
+        attempt(`opencode run "${safePrompt}"`);
+    });
 }
 
 // ─────────────────────────────────────────────
@@ -120,7 +112,7 @@ async function runMiMo(prompt) {
 
 const ENGINES = [
     { id: 'gemini', label: '💎 Gemini CLI (PM Agent)', run: runGemini, isAsync: false },
-    { id: 'mimo', label: '🧠 MiMo V2 Pro Free', run: runMiMo, isAsync: true },
+    { id: 'opencode', label: '🔧 OpenCode CLI', run: runOpenCode, isAsync: false },
 ];
 
 const BUILD_ENGINES = ENGINES;
@@ -187,7 +179,7 @@ async function runCascade(prompt, opts = {}) {
     }
 
     return {
-        output: '❌ All engines exhausted. Gemini CLI and MiMo V2 Pro Free are both unavailable right now.',
+        output: '❌ All engines exhausted. Gemini CLI and OpenCode are both unavailable right now.',
         engine: 'none',
         label: '—',
         status: 'all_failed'
@@ -195,6 +187,6 @@ async function runCascade(prompt, opts = {}) {
 }
 
 module.exports = {
-    runCascade, runGemini, runMiMo, ENGINES, BUILD_ENGINES,
+    runCascade, runGemini, runOpenCode, ENGINES, BUILD_ENGINES,
     isRateLimit, isNotFound
 };

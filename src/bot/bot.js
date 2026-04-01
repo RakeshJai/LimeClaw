@@ -11,7 +11,7 @@ function setupBot(bot) {
     bot.use(authMiddleware());
 
     bot.command('start', (ctx) => {
-        ctx.reply('🚀 *LimeClaw Initialized.*\nConnected to Gemini CLI & MiMo V2 Pro Free. Type /help to see all commands.', { parse_mode: 'Markdown' });
+        ctx.reply('🚀 *LimeClaw Initialized.*\nConnected to Gemini CLI & OpenCode. Type /help to see all commands.', { parse_mode: 'Markdown' });
     });
 
     bot.command('help', (ctx) => {
