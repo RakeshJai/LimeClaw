@@ -41,10 +41,9 @@ function initSchema() {
         try { db.exec("ALTER TABLE tasks ADD COLUMN priority INTEGER DEFAULT 0;"); } catch(e){}
         // Index for fast per-chat memory lookup
         try { db.exec("CREATE INDEX IF NOT EXISTS idx_memory_chat ON conversation_memory(chat_id, id);"); } catch(e){}
-        // Migrate old engine values to opencode
-        try { db.exec("UPDATE tasks SET current_engine = 'opencode' WHERE current_engine = 'antigravity'"); } catch(e){}
-        try { db.exec("UPDATE tasks SET current_engine = 'opencode' WHERE current_engine = 'gemini'"); } catch(e){}
-        try { db.exec("UPDATE tasks SET current_engine = 'opencode' WHERE current_engine = 'mimo'"); } catch(e){}
+        // Migrate old engine values to opencode (covers gemini, mimo, antigravity, NULL)
+        // Note: models.js explicitly sets current_engine on insert, so the column default is not relied upon
+        try { db.exec("UPDATE tasks SET current_engine = 'opencode' WHERE current_engine IS NULL OR current_engine != 'opencode'"); } catch(e){}
     } catch (err) {
         logger.error(`Schema error: ${err.message}`);
     }

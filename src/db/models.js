@@ -2,7 +2,7 @@ const db = require('../db/database');
 
 const taskModel = {
     create: (description, targetDir) => {
-        const stmt = db.prepare('INSERT INTO tasks (description, target_dir) VALUES (?, ?)');
+        const stmt = db.prepare("INSERT INTO tasks (description, target_dir, current_engine) VALUES (?, ?, 'opencode')");
         const info = stmt.run(description, targetDir);
         return info.lastInsertRowid;
     },
